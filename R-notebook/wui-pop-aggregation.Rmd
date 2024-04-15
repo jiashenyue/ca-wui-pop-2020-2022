@@ -1,0 +1,104 @@
+---
+title: "Prepare CA WUI tract pop data"
+output: html_notebook
+---
+```{r setup, warning=FALSE}
+# loading libraries
+library(tidyverse)
+library(zoo)
+library(foreign)
+library(here)
+library(purrr)
+library(lubridate)
+library(stringr)
+```
+
+- Clean workspace
+```{r}
+rm(list = ls())
+```
+
+- Read tract-level population file
+```{r}
+df_pop <- read_csv(here("data","pop_change_ca_tracts_2020_2022.csv"))
+```
+
+- Read WUI tract info
+```{r}
+df_wui <- read_csv(here("data","pop_trend_2010_2021_WUI_tracts_type.csv"))
+```
+
+- Join tract-level population file to WUI tract info
+
+```{r}
+df_wui_pop <- df_wui %>%
+  left_join(df_pop, by = c("geo_id"="GEO_ID","county"="county")) %>%
+  select(-county_pop_21, -tract_id_num)
+```
+
+- Obtain the number of tracts in each county of California
+
+```{r}
+tract_info <- df_pop %>%
+  group_by(county) %>%
+  summarise(tract_cnt = n())
+
+```
+
+- Add this info to `df_wui_pop`
+```{r}
+df_wui_pop <- df_wui_pop %>%
+  left_join(tract_info, by = "county")
+```
+
+- Aggregate the tracts in WUI by county
+
+```{r}
+df_wui_pop_agg <- df_wui_pop %>%
+  group_by(county) %>%
+  summarise(cnt_incre_20_21 = sum(chg_20_21 > 0,na.rm = TRUE),
+            cnt_incre_21_22 = sum(chg_21_22 > 0,na.rm = TRUE),
+            cnt_incre_20_22 = sum(chg_20_22 > 0,na.rm = TRUE),
+            cnt_decre_20_21 = sum(chg_20_21 < 0,na.rm = TRUE),
+            cnt_decre_21_22 = sum(chg_21_22 < 0,na.rm = TRUE),
+            cnt_decre_20_22 = sum(chg_20_22 < 0,na.rm = TRUE),
+            total_tract = first(tract_cnt),
+            pct_incre_20_21 = round(cnt_incre_20_21/total_tract*100,2),
+            pct_incre_21_22 = round(cnt_incre_21_22/total_tract*100,2),
+            pct_incre_20_22 = round(cnt_incre_20_22/total_tract*100,2),
+            pct_decre_20_21 = round(cnt_decre_20_21/total_tract*100,2),
+            pct_decre_21_22 = round(cnt_decre_21_22/total_tract*100,2),
+            pct_decre_20_22 = round(cnt_decre_20_22/total_tract*100,2),
+            .groups = 'drop')
+```
+
+- Aggregate the tracts in WUI by county for tracts inside significanty increased tracts
+
+```{r}
+df_wui_pop_agg_increased_tracts <- df_wui_pop %>%
+  filter(mk_pop>0 & pval_mk < 0.05) %>%
+  group_by(county) %>%
+  summarise(cnt_incre_20_21 = sum(chg_20_21 > 0,na.rm = TRUE),
+            cnt_incre_21_22 = sum(chg_21_22 > 0,na.rm = TRUE),
+            cnt_incre_20_22 = sum(chg_20_22 > 0,na.rm = TRUE),
+            cnt_decre_20_21 = sum(chg_20_21 < 0,na.rm = TRUE),
+            cnt_decre_21_22 = sum(chg_21_22 < 0,na.rm = TRUE),
+            cnt_decre_20_22 = sum(chg_20_22 < 0,na.rm = TRUE),
+            total_tract = n(),
+            pct_incre_20_21 = round(cnt_incre_20_21/total_tract*100,2),
+            pct_incre_21_22 = round(cnt_incre_21_22/total_tract*100,2),
+            pct_incre_20_22 = round(cnt_incre_20_22/total_tract*100,2),
+            pct_decre_20_21 = round(cnt_decre_20_21/total_tract*100,2),
+            pct_decre_21_22 = round(cnt_decre_21_22/total_tract*100,2),
+            pct_decre_20_22 = round(cnt_decre_20_22/total_tract*100,2),
+            .groups = 'drop')
+```
+
+- Save aggregated results for mapping
+
+```{r}
+write_csv(df_wui_pop_agg, here("data","wui_pop_change_cnty_2020_2022.csv"))
+write_csv(df_wui_pop_agg_increased_tracts, 
+          here("data","wui_sign_increase_pop_change_cnty_2020_2022.csv"))
+write_csv(df_wui_pop, here("data","wui_pop_change_tract_2020_2022.csv"))
+```
